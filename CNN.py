@@ -249,4 +249,4 @@ with torch.no_grad():
         f'Cloth mask:\tprecision={round(precisions[3], 2)}%,\trecall={round(recalls[3], 2)}%,\tf1 measure={round(f1s[3], 2)}')
 
 # Save trained model
-# torch.save(model.state_dict(), 'cnnsaved.pt')
+torch.save(model.state_dict(), 'cnnsaved.pt')
