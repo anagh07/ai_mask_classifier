@@ -159,7 +159,6 @@ with torch.no_grad():
 print('\n#### Dataset ####')
 print(f'Total training images: {len(train_loader.dataset)}')
 print(f'Total test images: {total}')
-# class_labels = [0, 1, 2, 3]
 class_labels = ['no-mask', 'ffp2', 'surgical', 'cloth']
 class_precisions = precision_score(y_true, y_pred, labels=[0, 1, 2, 3],
                                    average=None)
@@ -168,31 +167,10 @@ class_recalls = recall_score(y_true, y_pred, labels=[0, 1, 2, 3],
 class_f1s = f1_score(y_true, y_pred, labels=[0, 1, 2, 3],
                      average=None)
 report = classification_report(y_true, y_pred, target_names=class_labels)
-for index in range(4):
-    class_precisions[index] = round(class_precisions[index], 3)
-    class_recalls[index] = round(class_recalls[index], 3)
-    class_f1s[index] = round(class_f1s[index], 3)
-    macro_average_precision = round(precision_score(y_true, y_pred, labels=[0, 1, 2, 3], average='macro'), 3)
-    macro_average_recall = round(recall_score(y_true, y_pred, labels=[0, 1, 2, 3], average='macro'), 3)
-    macro_average_f1 = round(recall_score(y_true, y_pred, labels=[0, 1, 2, 3], average='macro'), 3)
 
-# Tables
-prec_table = PrettyTable()
-prec_table.field_names = ['No mask', 'FFP2', 'Surgical', 'Cloth', 'Average']
-prec_table.add_row(numpy.append(class_precisions, macro_average_precision))
-rec_table = PrettyTable()
-rec_table.field_names = ['No mask', 'FFP2', 'Surgical', 'Cloth', 'Average']
-rec_table.add_row(numpy.append(class_recalls, macro_average_recall))
-f1_table = PrettyTable()
-f1_table.field_names = ['No mask', 'FFP2', 'Surgical', 'Cloth', 'Average']
-f1_table.add_row(numpy.append(class_f1s, macro_average_f1))
 cm = confusion_matrix(y_true, y_pred, labels=[0, 1, 2, 3])
 print('\n#### Evaluation ####')
 print(report)
-# print(f'Precision Score: \n{prec_table}\n')
-# print(f'Recall Score: \n{rec_table}\n')
-# print(f'F1 Score: \n{f1_table}\n')
-# print(f'Confusion matrix: \n{cm}')
 cm_display = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_labels)
 cm_display.plot()
 plt.show()
