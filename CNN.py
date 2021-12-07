@@ -2,10 +2,15 @@
 import os
 import cv2
 import random
+
+import numpy
 import torch
 import torch.nn as nn
 import torch.utils.data as td
 from prettytable import PrettyTable
+from sklearn.metrics import classification_report, confusion_matrix, precision_score, recall_score, f1_score, \
+    ConfusionMatrixDisplay, accuracy_score
+import matplotlib.pyplot as plt
 
 EVALUATE_100_IMG = False  # If running on submitted data (100 sample images) then set to true
 
@@ -33,7 +38,7 @@ for data in training_data:
     training_data[training_data.index(data)] = tuple(data)
 
 total = len(training_data)
-training_percent = .9
+training_percent = .8
 if EVALUATE_100_IMG:
     training_percent = .01
 train = training_data[:int(total * training_percent)]
@@ -139,114 +144,58 @@ model.eval()
 with torch.no_grad():
     correct = 0
     total = 0
-    tp_fn_labels = [0, 0, 0, 0]  # number of occurances for [ "nomask", "ffp2", ... ]
-    tp_fp_labels = [0, 0, 0, 0]  # number of occurances for [ "nomask", "ffp2", ... ]
-    tp_labels = [0, 0, 0, 0]  # number of occurances for [ "nomask", "ffp2", ... ]
-    fn_labels = [0, 0, 0, 0]  # number of occurances for [ "nomask", "ffp2", ... ]
-    fp_labels = [0, 0, 0, 0]  # number of occurances for [ "nomask", "ffp2", ... ]
-    tn_labels = [0, 0, 0, 0]  # number of occurances for [ "nomask", "ffp2", ... ]
+    y_true = torch.tensor([])
+    y_pred = torch.tensor([])
     for images, labels in test_loader:
         outputs = model(images)
         pred_values, predicted = torch.max(outputs.data, 1)
+        y_true = torch.concat((y_true, labels), 0)
+        y_pred = torch.concat((y_pred, predicted), 0)
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
         predicted_size = predicted.size()
-        for i in range(predicted_size[0]):
-            # TP
-            if predicted[i].item() == labels[i].item() and predicted[i].item() == 0:
-                tp_labels[0] += 1
-            elif predicted[i].item() == labels[i].item() and predicted[i].item() == 1:
-                tp_labels[1] += 1
-            elif predicted[i].item() == labels[i].item() and predicted[i].item() == 2:
-                tp_labels[2] += 1
-            elif predicted[i].item() == labels[i].item() and predicted[i].item() == 3:
-                tp_labels[3] += 1
-            # TP + FP
-            if predicted[i].item() == 0:
-                tp_fp_labels[0] += 1
-            elif predicted[i].item() == 1:
-                tp_fp_labels[1] += 1
-            elif predicted[i].item() == 2:
-                tp_fp_labels[2] += 1
-            elif predicted[i].item() == 3:
-                tp_fp_labels[3] += 1
-            # TP + FN
-            if labels[i].item() == 0:
-                tp_fn_labels[0] += 1
-            elif labels[i].item() == 1:
-                tp_fn_labels[1] += 1
-            elif labels[i].item() == 2:
-                tp_fn_labels[2] += 1
-            elif labels[i].item() == 3:
-                tp_fn_labels[3] += 1
 
-    macro_denom_recall = 4;
-    macro_denom_precision = 4;
-    recalls = [0, 0, 0, 0]
-    precisions = [0, 0, 0, 0]
-    f1s = [0, 0, 0, 0]
+# Evaluation using scikit learn metrics
+print('\n#### Dataset ####')
+print(f'Total training images: {len(train_loader.dataset)}')
+print(f'Total test images: {total}')
+# class_labels = [0, 1, 2, 3]
+class_labels = ['no-mask', 'ffp2', 'surgical', 'cloth']
+class_precisions = precision_score(y_true, y_pred, labels=[0, 1, 2, 3],
+                                   average=None)
+class_recalls = recall_score(y_true, y_pred, labels=[0, 1, 2, 3],
+                             average=None)
+class_f1s = f1_score(y_true, y_pred, labels=[0, 1, 2, 3],
+                     average=None)
+report = classification_report(y_true, y_pred, target_names=class_labels)
+for index in range(4):
+    class_precisions[index] = round(class_precisions[index], 3)
+    class_recalls[index] = round(class_recalls[index], 3)
+    class_f1s[index] = round(class_f1s[index], 3)
+    macro_average_precision = round(precision_score(y_true, y_pred, labels=[0, 1, 2, 3], average='macro'), 3)
+    macro_average_recall = round(recall_score(y_true, y_pred, labels=[0, 1, 2, 3], average='macro'), 3)
+    macro_average_f1 = round(recall_score(y_true, y_pred, labels=[0, 1, 2, 3], average='macro'), 3)
 
-    for i in range(4):
-        # FN
-        fn_labels[i] = tp_fn_labels[i] - tp_labels[i]
-        # FP
-        fp_labels[i] = tp_fp_labels[i] - tp_labels[i]
-        # TN
-        tn_labels[i] = total - tp_labels[i] - fp_labels[i] - fn_labels[i]
-        # precision
-        if tp_fp_labels[i] == 0:
-            macro_denom_precision -= 1
-        else:
-            precisions[i] = tp_labels[i] * 100 / tp_fp_labels[i]
-
-        # recall
-        if tp_fn_labels[i] == 0:
-            macro_denom_recall -= 1
-        else:
-            recalls[i] = tp_labels[i] * 100 / tp_fn_labels[i]
-
-        # f1
-        if (precisions[i] + recalls[i]) == 0:
-            pass
-        else:
-            f1s[i] = 2 * (precisions[i] * recalls[i]) / (precisions[i] + recalls[i])
-
-    precision = sum(precisions) / macro_denom_precision
-    recall = sum(recalls) / macro_denom_recall
-    accuracy = correct * 100 / total
-    f1 = 2 * (precision * recall) / (precision + recall)
-
-    confused_no_mask = PrettyTable()
-    confused_no_mask.field_names = [f'No mask (n={total})', "Predicted NO", "Predicted YES"]
-    confused_no_mask.add_row(["Actual NO", tn_labels[0], fp_labels[0]])
-    confused_no_mask.add_row(["Actual YES", fn_labels[0], tp_labels[0]])
-    confused_ffp2 = PrettyTable()
-    confused_ffp2.field_names = [f'FFP2 (n={total})', "Predicted NO", "Predicted YES"]
-    confused_ffp2.add_row(["Actual NO", tn_labels[1], fp_labels[1]])
-    confused_ffp2.add_row(["Actual YES", fn_labels[1], tp_labels[1]])
-    confused_cloth = PrettyTable()
-    confused_cloth.field_names = [f'Cloth (n={total})', "Predicted NO", "Predicted YES"]
-    confused_cloth.add_row(["Actual NO", tn_labels[3], fp_labels[3]])
-    confused_cloth.add_row(["Actual YES", fn_labels[3], tp_labels[3]])
-    confused_surgical = PrettyTable()
-    confused_surgical.field_names = [f'Surgical (n={total})', "Predicted NO", "Predicted YES"]
-    confused_surgical.add_row(["Actual NO", tn_labels[2], fp_labels[2]])
-    confused_surgical.add_row(["Actual YES", fn_labels[2], tp_labels[2]])
-
-    print(
-        f'Overall on {total} images:\taccuracy={round(accuracy, 2)},\tprecision={round(precision, 2)}%,\trecall={round(recall, 2)}%,\tf1 measure={round(f1, 2)}')
-    print(confused_no_mask)
-    print(
-        f'No mask:\tprecision={round(precisions[0], 2)}%,\trecall={round(recalls[0], 2)}%,\tf1 measure={round(f1s[0], 2)}')
-    print(confused_ffp2)
-    print(
-        f'FFP2:\tprecision={round(precisions[1], 2)}%,\trecall={round(recalls[1], 2)}%,\tf1 measure={round(f1s[1], 2)}')
-    print(confused_surgical)
-    print(
-        f'Surgical mask:\tprecision={round(precisions[2], 2)}%,\trecall={round(recalls[2], 2)}%,\tf1 measure={round(f1s[2], 2)}')
-    print(confused_cloth)
-    print(
-        f'Cloth mask:\tprecision={round(precisions[3], 2)}%,\trecall={round(recalls[3], 2)}%,\tf1 measure={round(f1s[3], 2)}')
+# Tables
+prec_table = PrettyTable()
+prec_table.field_names = ['No mask', 'FFP2', 'Surgical', 'Cloth', 'Average']
+prec_table.add_row(numpy.append(class_precisions, macro_average_precision))
+rec_table = PrettyTable()
+rec_table.field_names = ['No mask', 'FFP2', 'Surgical', 'Cloth', 'Average']
+rec_table.add_row(numpy.append(class_recalls, macro_average_recall))
+f1_table = PrettyTable()
+f1_table.field_names = ['No mask', 'FFP2', 'Surgical', 'Cloth', 'Average']
+f1_table.add_row(numpy.append(class_f1s, macro_average_f1))
+cm = confusion_matrix(y_true, y_pred, labels=[0, 1, 2, 3])
+print('\n#### Evaluation ####')
+print(report)
+# print(f'Precision Score: \n{prec_table}\n')
+# print(f'Recall Score: \n{rec_table}\n')
+# print(f'F1 Score: \n{f1_table}\n')
+# print(f'Confusion matrix: \n{cm}')
+cm_display = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_labels)
+cm_display.plot()
+plt.show()
 
 # Save trained model
 torch.save(model.state_dict(), 'cnnsaved.pt')
